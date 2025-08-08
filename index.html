@@ -1,139 +1,168 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pac-Man — Landmarks Edition</title>
-<style>
-:root{
-  --bg:#0b1020; --panel:#0f1730; --ui:#d6e1ff; --accent:#7de3ff;
-  --wall:#1b2b5a; --pellet:#ffd166; --power:#ff7b7b; --pac:#ffe500;
-  --ghost1:#ff5a78; --ghost2:#00df9a; --ghost3:#3aa5ff; --ghost4:#9b6bff;
-}
-html,body{margin:0;height:100%;background:#0c1225;color:var(--ui);font-family:sans-serif}
-header{text-align:center;padding:0.5rem}
-h1{margin:0.2rem 0}
-.hud{display:flex;gap:1rem;justify-content:center;align-items:center;flex-wrap:wrap}
-.chip{background:var(--panel);padding:0.4rem 0.75rem;border-radius:999px;min-width:100px;text-align:center}
-.btn{background:transparent;color:var(--accent);border:1px solid rgba(255,255,255,.2);padding:0.4rem 0.8rem;border-radius:8px;cursor:pointer}
-canvas{display:block;margin:0.5rem auto;background:#02060f;border-radius:12px}
-.pad{display:none;grid-template-columns:64px 64px 64px;grid-template-rows:64px 64px 64px;gap:8px;justify-content:center;margin-bottom:0.5rem}
-.pad button{width:64px;height:64px;border-radius:8px;background:rgba(255,255,255,.05);color:var(--ui);font-size:20px}
-@media(max-width:820px){.pad{display:grid}}
-.credits{text-align:center;font-size:0.8rem;opacity:0.7;padding:1rem}
-</style>
+  <meta charset="UTF-8">
+  <title>Pac-Man — Landmarks Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    canvas {
+      display: block;
+      margin: 1rem auto;
+      background: #111;
+      border: 6px solid #fff;
+      border-radius: 12px;
+    }
+    h1 { margin-top: 0.5rem; }
+  </style>
 </head>
 <body>
-<header>
   <h1>Pac-Man — Landmarks Edition</h1>
-  <div class="hud">
-    <div class="chip">Score: <span id="score">0</span></div>
-    <div class="chip" id="status">Ready!</div>
-    <button class="btn" id="restart">Restart</button>
-  </div>
-</header>
-<canvas id="game" width="896" height="896"></canvas>
-<div class="pad">
-  <div></div><button data-dir="up">▲</button><div></div>
-  <button data-dir="left">◀</button><div></div><button data-dir="right">▶</button>
-  <div></div><button data-dir="down">▼</button><div></div>
-</div>
-<div class="credits">
-Uses images under Creative Commons:<br>
-Olympiaturm photo by Dietmar Rabich — <a href="https://commons.wikimedia.org/wiki/File:M%C3%BCnchen,_Olympiaturm_--_2011_--_1015.jpg" target="_blank">CC BY-SA 4.0</a><br>
-Chateau Marmont photo by Tony Hisgett — <a href="https://commons.wikimedia.org/wiki/File:Chateau_Marmont_Hollywood_(15061611393).jpg" target="_blank">CC BY 2.0</a>
-</div>
-<script>
-(() => {
-const TILE=32,GRID=28,W=TILE*GRID,H=TILE*GRID;
-const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
-const scoreEl=document.getElementById('score'),statusEl=document.getElementById('status');
-const towerImg=new Image();towerImg.src='https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/M%C3%BCnchen%2C_Olympiaturm_--_2011_--_1015.jpg/240px-M%C3%BCnchen%2C_Olympiaturm_--_2011_--_1015.jpg';
-const chateauImg=new Image();chateauImg.src='https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Chateau_Marmont_Hollywood_%2815061611393%29.jpg/240px-Chateau_Marmont_Hollywood_%2815061611393%29.jpg';
-const PAC_SPEED=2.3,GHOST_SPEED=1.85,POWER_MS=7000,COLORS=getComputedStyle(document.documentElement);
-const raw=[
-'1111111111111111111111111111',
-'1..2222222221111222222222..1',
-'1.11.111111.1111.111111.11.1',
-'1.11.1....1.2222.1....1.11.1',
-'1.22.1.11.1.1111.1.11.1.22.1',
-'1.11.1.11.1......1.11.1.11.1',
-'1....1.11.11111111.11.1....1',
-'1111.1.11.133..331.11.1.1111',
-'1001.1.11.1  00 1.11.1.10001',
-'1..1.1....1  00 1....1.1..11',
-'1.11.111111  00 111111.11.11',
-'1.11........  00 ........11.1',
-'1.1111111111  00 1111111111.1',
-'1.1111111111  40 1111111111.1',
-'1.1111111111  00 1111111111.1',
-'1.11........  00 ........11.1',
-'1.11.111111  00 111111.11.11',
-'1..1.1....1  00 1....1.1..11',
-'1001.1.11.1  00 1.11.1.10001',
-'1111.1.11.133..331.11.1.1111',
-'1....1.11.11111111.11.1....1',
-'1.11.1.11.1......1.11.1.11.1',
-'1.22.1.11.1.1111.1.11.1.22.1',
-'1.11.1....1.2222.1....1.11.1',
-'1.11.111111.1111.111111.11.1',
-'1..2222222221111222222222..1',
-'18  11111111111111111111  91',
-'1111111111111111111111111111'
-];
-const LV=raw.map(row=>row.split('').map(c=>{if(c==='1')return 1;if(c==='0')return 2;if(c==='3')return 3;if(c==='4')return 4;if(c==='8')return 8;if(c==='9')return 9;return 0;}));
-const pac={x:TILE*14+TILE/2,y:TILE*22+TILE/2,dir:{x:0,y:0},next:{x:0,y:0},mouth:0};
-const ghosts=[
-{x:TILE*14+TILE/2,y:TILE*13+TILE/2,color:css('--ghost1'),dir:{x:0,y:1},scatter:{c:1,r:1}},
-{x:TILE*13+TILE/2,y:TILE*13+TILE/2,color:css('--ghost2'),dir:{x:1,y:0},scatter:{c:GRID-2,r:1}},
-{x:TILE*15+TILE/2,y:TILE*13+TILE/2,color:css('--ghost3'),dir:{x:-1,y:0},scatter:{c:1,r:GRID-2}},
-{x:TILE*16+TILE/2,y:TILE*13+TILE/2,color:css('--ghost4'),dir:{x:0,y:-1},scatter:{c:GRID-2,r:GRID-2}},
-];
-let score=0,powerUntil=0,gameOver=false,youWin=false;
-function css(name){return COLORS.getPropertyValue(name).trim();}
-function setStatus(m){statusEl.textContent=m;}
-function inBounds(c,r){return c>=0&&r>=0&&c<GRID&&r<GRID;}
-function tileAt(px,py){const c=Math.floor(px/TILE),r=Math.floor(py/TILE);if(!inBounds(c,r))return 1;return LV[r][c];}
-function canMove(ent,dir){const nx=ent.x+dir.x*(ent===pac?PAC_SPEED:GHOST_SPEED),ny=ent.y+dir.y*(ent===pac?PAC_SPEED:GHOST_SPEED);
-const pad=10;return [[nx-pad,ny-pad],[nx+pad,ny-pad],[nx-pad,ny+pad],[nx+pad,ny+pad]].every(([x,y])=>tileAt(x,y)!==1);}
-function stepPac(){if(pac.next.x!==pac.dir.x||pac.next.y!==pac.dir.y){const tc=Math.floor(pac.x/TILE)*TILE+TILE/2,tr=Math.floor(pac.y/TILE)*TILE+TILE/2;
-if(Math.hypot(pac.x-tc,pac.y-tr)<6&&canMove({x:tc,y:tr},pac.next)){pac.x=tc;pac.y=tr;pac.dir=pac.next;}}
-if(canMove(pac,pac.dir)){pac.x+=pac.dir.x*PAC_SPEED;pac.y+=pac.dir.y*PAC_SPEED;}if(pac.x<0)pac.x=W-1;if(pac.x>W)pac.x=0;
-const c=Math.floor(pac.x/TILE),r=Math.floor(pac.y/TILE),t=LV[r][c];if(t===2){LV[r][c]=0;score+=10;}
-if(t===3){LV[r][c]=0;score+=50;powerUntil=performance.now()+POWER_MS;}if(t===4){youWin=true;setStatus('You reached the Château! 🎉');}
-scoreEl.textContent=score;}
-function stepGhost(g){const frightened=performance.now()<powerUntil,speed=frightened?GHOST_SPEED*0.6:GHOST_SPEED;
-if(!canMove(g,g.dir)||Math.random()<0.02){const dirs=[{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}],opp={x:-g.dir.x,y:-g.dir.y};
-const choices=dirs.filter(d=>d.x!==opp.x||d.y!==opp.y).filter(d=>canMove(g,d));
-const target=frightened?g.scatter:{c:Math.floor(pac.x/TILE),r:Math.floor(pac.y/TILE)};let best=g.dir,bestDist=Infinity;
-(choices.length?choices:dirs).forEach(d=>{if(!canMove(g,d))return;const nx=g.x+d.x*TILE,ny=g.y+d.y*TILE,dc=Math.floor(nx/TILE),dr=Math.floor(ny/TILE),dist=Math.hypot(dc-target.c,dr-target.r);
-if(dist<bestDist){bestDist=dist;best=d;}});g.dir=best;}
-g.x+=g.dir.x*speed;g.y+=g.dir.y*speed;if(g.x<0)g.x=W-1;if(g.x>W)g.x=0;
-if(Math.hypot(g.x-pac.x,g.y-pac.y)<18){if(performance.now()<powerUntil){score+=200;scoreEl.textContent=score;g.x=TILE*14+TILE/2;g.y=TILE*13+TILE/2;g.dir={x:0,y:1};setStatus('Chomp!');}
-else{gameOver=true;setStatus('Game Over ☠️ Click Restart');}}}
-function draw(){ctx.clearRect(0,0,W,H);for(let r=0;r<GRID;r++){for(let c=0;c<GRID;c++){const t=LV[r][c],x=c*TILE,y=r*TILE;
-if(t===1){ctx.fillStyle=css('--wall');ctx.fillRect(x,y,TILE,TILE);continue;}
-if(t===2){ctx.fillStyle=css('--pellet');dot(x+TILE/2,y+TILE/2,3);continue;}
-if(t===3){ctx.fillStyle=css('--power');dot(x+TILE/2,y+TILE/2,6);continue;}
-if(t===4){drawChateau(x,y);continue;}
-if(t===8){drawTower(x,y);continue;}}}
-const frightened=performance.now()<powerUntil;ghosts.forEach(g=>drawGhost(g.x,g.y,frightened?'#9bd1ff':g.color));
-pac.mouth=(pac.mouth+0.15)%(Math.PI*2);drawPac(pac.x,pac.y,Math.atan2(pac.dir.y,pac.dir.x),Math.abs(Math.sin(pac.mouth))*0.9);}
-function dot(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();}
-function drawPac(x,y,angle,mOpen){ctx.fillStyle=css('--pac');ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,13,angle-mOpen*0.6,angle+mOpen*0.6);ctx.closePath();ctx.fill();}
-function drawGhost(x,y,color){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,12,Math.PI,0);ctx.lineTo(x+12,y+12);
-for(let i=0;i<6;i++){const dx=x+12-i*(24/5),dy=y+12+(i%2?4:0);ctx.lineTo(dx,dy);}ctx.closePath();ctx.fill();}
-function drawTower(x,y){if(!towerImg.complete)return;ctx.drawImage(towerImg,x,y,TILE,TILE);}
-function drawChateau(x,y){if(!chateauImg.complete)return;ctx.drawImage(chateauImg,x,y,TILE,TILE);}
-function reset(){score=0;scoreEl.textContent='0';powerUntil=0;gameOver=false;youWin=false;setStatus('Ready!');
-pac.x=TILE*14+TILE/2;pac.y=TILE*22+TILE/2;pac.dir={x:0,y:0};pac.next={x:0,y:0};pac.mouth=0;}
-document.getElementById('restart').onclick=reset;
-const KEYS={ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0}};
-addEventListener('keydown',e=>{const d=KEYS[e.code];if(!d)return;pac.next=d;if(pac.dir.x===0&&pac.dir.y===0)pac.dir=d;});
-document.querySelectorAll('[data-dir]').forEach(b=>b.onclick=()=>{const map={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};pac.next=map[b.dataset.dir];if(pac.dir.x===0&&pac.dir.y===0)pac.dir=map[b.dataset.dir];});
-let last=0;const FPS=1000/60;function loop(t){if(!last)last=t;if(t-last>=FPS){if(!gameOver&&!youWin){stepPac();ghosts.forEach(stepGhost);setStatus(performance.now()<powerUntil?'Power Mode! 👻':'Run!');}draw();last=t;}requestAnimationFrame(loop);}
-reset();requestAnimationFrame(loop);
-})();
-</script>
+  <canvas id="game" width="448" height="448"></canvas>
+  <p>Reach Chateau Marmont 🏨 and avoid ghosts 👻</p>
+  <script>
+    const TILE = 32;
+    const ROWS = 14, COLS = 14;
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const TILES = {
+      EMPTY: 0,
+      WALL: 1,
+      PELLET: 2,
+      POWER: 3,
+      GOAL: 4,
+      MUNICH_TOWER: 5,
+      LIBERTY: 6
+    };
+
+    const tileMap = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,5,2,0,2,0,2,0,2,0,2,6,0,1],
+      [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+      [1,2,1,0,1,0,1,0,1,0,1,0,2,1],
+      [1,0,1,0,1,0,1,0,1,0,1,0,0,1],
+      [1,2,1,0,1,0,1,0,1,0,1,2,0,1],
+      [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+      [1,2,0,0,0,0,0,0,0,0,0,0,2,1],
+      [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+      [1,2,1,3,1,0,1,0,1,0,1,0,2,1],
+      [1,0,1,0,1,0,1,0,1,0,1,0,0,1],
+      [1,2,1,0,1,0,1,0,1,0,1,2,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,4,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    ];
+
+    const pac = { x: 1, y: 1, dir: {x: 0, y: 0} };
+    const ghosts = [
+      { x: 7, y: 6, color: "#f00", dx: 1, dy: 0 },
+      { x: 8, y: 7, color: "#0ff", dx: -1, dy: 0 }
+    ];
+
+    let score = 0;
+    let goalReached = false;
+
+    function drawTile(x, y, type) {
+      switch (type) {
+        case TILES.WALL:
+          ctx.fillStyle = "#444";
+          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+          break;
+        case TILES.PELLET:
+          ctx.fillStyle = "#FFD700";
+          ctx.beginPath();
+          ctx.arc(x * TILE + TILE/2, y * TILE + TILE/2, 4, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case TILES.POWER:
+          ctx.fillStyle = "#FF69B4";
+          ctx.beginPath();
+          ctx.arc(x * TILE + TILE/2, y * TILE + TILE/2, 7, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case TILES.GOAL:
+          ctx.font = "20px serif";
+          ctx.fillText("🏨", x * TILE + 6, y * TILE + 26);
+          break;
+        case TILES.MUNICH_TOWER:
+          ctx.font = "20px serif";
+          ctx.fillText("🗼", x * TILE + 6, y * TILE + 26);
+          break;
+        case TILES.LIBERTY:
+          ctx.font = "20px serif";
+          ctx.fillText("🗽", x * TILE + 6, y * TILE + 26);
+          break;
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const type = tileMap[y][x];
+          drawTile(x, y, type);
+        }
+      }
+
+      ghosts.forEach(g => {
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.arc(g.x * TILE + TILE/2, g.y * TILE + TILE/2, 12, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.fillStyle = "yellow";
+      ctx.beginPath();
+      ctx.arc(pac.x * TILE + TILE/2, pac.y * TILE + TILE/2, 12, 0.25 * Math.PI, 1.75 * Math.PI);
+      ctx.lineTo(pac.x * TILE + TILE/2, pac.y * TILE + TILE/2);
+      ctx.fill();
+    }
+
+    function movePac() {
+      const newX = pac.x + pac.dir.x;
+      const newY = pac.y + pac.dir.y;
+      if (tileMap[newY][newX] !== TILES.WALL) {
+        pac.x = newX;
+        pac.y = newY;
+        if (tileMap[newY][newX] === TILES.PELLET) {
+          score += 10;
+          tileMap[newY][newX] = TILES.EMPTY;
+        }
+        if (tileMap[newY][newX] === TILES.POWER) {
+          score += 50;
+          tileMap[newY][newX] = TILES.EMPTY;
+        }
+        if (tileMap[newY][newX] === TILES.GOAL) {
+          goalReached = true;
+        }
+      }
+    }
+
+    function gameLoop() {
+      movePac();
+      draw();
+      if (!goalReached) requestAnimationFrame(gameLoop);
+      else {
+        ctx.fillStyle = "#0f0";
+        ctx.font = "bold 20px sans-serif";
+        ctx.fillText("🎉 You reached Chateau Marmont!", 40, 224);
+      }
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp") pac.dir = {x: 0, y: -1};
+      if (e.key === "ArrowDown") pac.dir = {x: 0, y: 1};
+      if (e.key === "ArrowLeft") pac.dir = {x: -1, y: 0};
+      if (e.key === "ArrowRight") pac.dir = {x: 1, y: 0};
+    });
+
+    requestAnimationFrame(gameLoop);
+  </script>
 </body>
 </html>
