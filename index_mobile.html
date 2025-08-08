@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Pac-Man — Landmarks Edition (Mobile)</title>
+<style>
+  :root { --grid:#222; --wall:#355; --pellet:#ffd166; --power:#ff7b7b; --ui:#cfe4ff; }
+  html,body { margin:0; background:#000; color:var(--ui); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; }
+  header { text-align:center; padding:.6rem 1rem; }
+  h1 { margin:.2rem 0 .3rem; font-size:clamp(18px,4.8vw,28px); }
+  .hud { display:flex; gap:.6rem; justify-content:center; align-items:center; flex-wrap:wrap; }
+  .chip { background:#0d1830; border:1px solid #1c2b4f; border-radius:999px; padding:.35rem .7rem; min-width:110px; text-align:center; }
+  #startBtn { background:#1a3a8a; color:#fff; border:none; border-radius:10px; padding:.6rem .9rem; font-weight:700; }
+  #startBtn:active { transform:scale(.98); }
+  canvas { display:block; margin:.5rem auto; background:#060a14; border:6px solid #fff; border-radius:14px; touch-action:none; }
+  .pad { display:grid; grid-template-columns:70px 70px 70px; grid-template-rows:70px 70px 70px; gap:8px; justify-content:center; margin:.5rem 0 1rem; user-select:none; }
+  .pad button { width:70px; height:70px; border-radius:14px; border:1px solid #345; background:#0e1a33; color:#cfe4ff; font-size:24px; font-weight:800; }
+  .pad .spacer { visibility:hidden; }
+  @media (min-width: 841px) { .pad { display:none; } }
+  .credits { text-align:center; opacity:.7; font-size:.8rem; padding:0 .8rem 1rem; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Pac-Man — Landmarks Edition</h1>
+    <div class="hud">
+      <div class="chip">Score: <span id="score">0</span></div>
+      <div class="chip" id="status">Tap Start</div>
+      <button id="startBtn">Start</button>
+    </div>
+  </header>
+
+  <canvas id="game" width="448" height="448"></canvas>
+
+  <div class="pad" id="dpad">
+    <div class="spacer"></div><button data-dir="up">▲</button><div class="spacer"></div>
+    <button data-dir="left">◀</button><div class="spacer"></div><button data-dir="right">▶</button>
+    <div class="spacer"></div><button data-dir="down">▼</button><div class="spacer"></div>
+  </div>
+
+  <!-- Real images hosted on Wikimedia (thumbnail-size for speed) -->
+  <img id="olympiaturm" crossOrigin="anonymous"
+       src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/M%C3%BCnchen%2C_Olympiaturm_--_2011_--_1015.jpg/160px-M%C3%BCnchen%2C_Olympiaturm_--_2011_--_1015.jpg"
+       hidden>
+  <img id="liberty" crossOrigin="anonymous"
+       src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Statue_of_Liberty_7.jpg/160px-Statue_of_Liberty_7.jpg"
+       hidden>
+  <img id="chateau" crossOrigin="anonymous"
+       src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Chateau_Marmont_Hollywood_%2815061611393%29.jpg/160px-Chateau_Marmont_Hollywood_%2815061611393%29.jpg"
+       hidden>
+
+  <!-- Sounds (lightweight). These will only play after Start (user gesture). -->
+  <audio id="waka" preload="auto"
+         src="https://cdn.jsdelivr.net/gh/jcubic/static@master/wav/waka.wav"></audio>
+  <audio id="power" preload="auto"
+         src="https://cdn.jsdelivr.net/gh/naptha/talkdemo@master/sounds/powerup.wav"></audio>
+  <audio id="win" preload="auto"
+         src="https://cdn.jsdelivr.net/gh/naptha/talkdemo@master/sounds/coins.wav"></audio>
+
+  <div class="credits">
+    Images: Olympiaturm © Dietmar Rabich (CC BY-SA 4.0); Statue of Liberty © William Warby (CC BY 2.0); Chateau Marmont © Tony Hisgett (CC BY 2.0).<br>
+    Audio: lightweight game SFX for demo. Tap <b>Start</b> on mobile to enable sound.
+  </div>
+
+<script>
+(() => {
+  // --- Setup ---
+  const TILE = 32, ROWS = 14, COLS = 14;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const statusEl = document.getElementById('status');
+  const startBtn = document.getElementById('startBtn');
+
+  const imgs = {
+    munich: document.getElementById('olympiaturm'),
+    liberty: document.getElementById('liberty'),
+    chateau: document.getElementById('chateau')
+  };
+  const sfx = {
+    waka: document.getElementById('waka'),
+    power: document.getElementById('power'),
+    win: document.getElementById('win')
+  };
+
+  const TILES = { EMPTY:0, WALL:1, PELLET:2, POWER:3, GOAL:4, MUNICH:5, LIBERTY:6 };
+  const map = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,5,2,0,2,0,2,0,2,0,2,6,0,1],
+    [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+    [1,2,1,0,1,0,1,0,1,0,1,0,2,1],
+    [1,0,1,0,1,0,1,0,1,0,1,0,0,1],
+    [1,2,1,0,1,0,1,0,1,0,1,2,0,1],
+    [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+    [1,2,0,0,0,0,0,0,0,0,0,0,2,1],
+    [1,0,1,1,1,0,1,1,1,0,1,1,0,1],
+    [1,2,1,3,1,0,1,0,1,0,1,0,2,1],
+    [1,0,1,0,1,0,1,0,1,0,1,0,0,1],
+    [1,2,1,0,1,0,1,0,1,0,1,2,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,4,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+  ];
+
+  // Entities
+  const pac = { x:1, y:1, dir:{x:0,y:0} };
+  const ghosts = [
+    { x:7, y:6, dx:1, dy:0, color:'#f55' },
+    { x:8, y:7, dx:-1, dy:0, color:'#5ff' }
+  ];
+
+  let running = false, goal = false, score = 0;
+  let last = 0, acc = 0, STEP_MS = 120; // movement step timing (ms)
+
+  function setStatus(t){ statusEl.textContent = t; }
+
+  // --- Input: keyboard ---
+  addEventListener('keydown', e => {
+    if (!running && (e.key.startsWith('Arrow') || e.key === ' ')) { startGame(); }
+    if (e.key === 'ArrowUp') pac.dir = {x:0,y:-1};
+    if (e.key === 'ArrowDown') pac.dir = {x:0,y:1};
+    if (e.key === 'ArrowLeft') pac.dir = {x:-1,y:0};
+    if (e.key === 'ArrowRight') pac.dir = {x:1,y:0};
+  }, {passive:true});
+
+  // --- Input: touch D-pad ---
+  document.querySelectorAll('[data-dir]').forEach(btn => {
+    btn.addEventListener('touchstart', (ev) => {
+      ev.preventDefault();
+      const m = btn.dataset.dir;
+      const d = {up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}}[m];
+      pac.dir = d;
+      if (!running) startGame();
+    }, {passive:false});
+    btn.addEventListener('click', () => { // desktop click
+      const m = btn.dataset.dir;
+      const d = {up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}}[m];
+      pac.dir = d;
+      if (!running) startGame();
+    });
+  });
+
+  // --- Input: swipe ---
+  let touchStart = null;
+  canvas.addEventListener('touchstart', (e)=>{
+    if (!running) startGame();
+    touchStart = e.changedTouches[0];
+  }, {passive:true});
+  canvas.addEventListener('touchend', (e)=>{
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.clientX;
+    const dy = t.clientY - touchStart.clientY;
+    if (Math.abs(dx) > Math.abs(dy)) pac.dir = {x: dx>0?1:-1, y:0};
+    else pac.dir = {x:0, y: dy>0?1:-1};
+    touchStart = null;
+  }, {passive:true});
+
+  // Start button: unlock audio + start loop
+  startBtn.addEventListener('click', startGame);
+  function startGame(){
+    if (running) return;
+    running = true;
+    try { sfx.waka.muted = false; sfx.waka.play().catch(()=>{}); sfx.waka.pause(); sfx.waka.currentTime=0; } catch(e){}
+    setStatus('Go!');
+    requestAnimationFrame(loop);
+  }
+
+  // --- Game mechanics ---
+  function isWall(x,y){ return map[y][x] === TILES.WALL; }
+  function step(){
+    // Pac move 1 tile per step if not blocked
+    const nx = pac.x + pac.dir.x, ny = pac.y + pac.dir.y;
+    if (!isWall(nx,ny)){ pac.x = nx; pac.y = ny; eat(nx,ny); }
+
+    // Simple ghost movement: try forward, else turn randomly (avoid walls)
+    ghosts.forEach(g => {
+      const tryDirs = [
+        {x:g.dx, y:g.dy},
+        {x:-g.dy, y:g.dx},  // right turn
+        {x:g.dy, y:-g.dx},  // left turn
+        {x:-g.dx, y:-g.dy}  // reverse
+      ];
+      let moved = false;
+      for (const d of tryDirs){
+        const gx = g.x + d.x, gy = g.y + d.y;
+        if (!isWall(gx,gy)){ g.x=gx; g.y=gy; g.dx=d.x; g.dy=d.y; moved=true; break; }
+      }
+      if (!moved) { g.dx = -g.dx; g.dy = -g.dy; } // stuck — reverse
+      // Collision with Pac
+      if (g.x===pac.x && g.y===pac.y){
+        // reset pac
+        pac.x=1; pac.y=1; pac.dir={x:0,y:0};
+        setStatus('Ouch!');
+      }
+    });
+  }
+
+  function eat(x,y){
+    const t = map[y][x];
+    if (t === TILES.PELLET){ map[y][x]=TILES.EMPTY; score+=10; scoreEl.textContent=score; sfx.waka.currentTime=0; sfx.waka.play().catch(()=>{}); }
+    if (t === TILES.POWER){ map[y][x]=TILES.EMPTY; score+=50; scoreEl.textContent=score; sfx.power.currentTime=0; sfx.power.play().catch(()=>{}); }
+    if (t === TILES.GOAL){ goal = true; setStatus('You made it to the Château!'); sfx.win.play().catch(()=>{}); }
+  }
+
+  // --- Rendering ---
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (let y=0;y<ROWS;y++){
+      for (let x=0;x<COLS;x++){
+        const t = map[y][x];
+        const px = x*TILE, py = y*TILE;
+        if (t===TILES.WALL){ ctx.fillStyle='#1b2b5a'; ctx.fillRect(px,py,TILE,TILE); continue; }
+        if (t===TILES.PELLET){ ctx.fillStyle='#ffd166'; dot(px+TILE/2, py+TILE/2, 4); continue; }
+        if (t===TILES.POWER){ ctx.fillStyle='#ff7b7b'; dot(px+TILE/2, py+TILE/2, 7); continue; }
+        if (t===TILES.GOAL){ drawImageFit(imgs.chateau, px, py); continue; }
+        if (t===TILES.MUNICH){ drawImageFit(imgs.munich, px, py); continue; }
+        if (t===TILES.LIBERTY){ drawImageFit(imgs.liberty, px, py); continue; }
+      }
+    }
+    // Ghosts
+    ghosts.forEach(g=>{ ctx.fillStyle=g.color; ctx.beginPath(); ctx.arc(g.x*TILE+TILE/2, g.y*TILE+TILE/2, 12, 0, Math.PI*2); ctx.fill(); });
+    // Pac
+    ctx.fillStyle='yellow'; ctx.beginPath();
+    if (pac.dir.x===0 && pac.dir.y===0) ctx.arc(pac.x*TILE+TILE/2, pac.y*TILE+TILE/2, 12, 0, Math.PI*2);
+    else {
+      const a = Math.atan2(pac.dir.y, pac.dir.x);
+      ctx.moveTo(pac.x*TILE+TILE/2, pac.y*TILE+TILE/2);
+      ctx.arc(pac.x*TILE+TILE/2, pac.y*TILE+TILE/2, 12, a+0.35, a-0.35, false);
+      ctx.closePath();
+    }
+    ctx.fill();
+
+    if (goal){
+      ctx.fillStyle='#0f0'; ctx.font='bold 20px system-ui, sans-serif';
+      ctx.fillText('🎉 You reached Château Marmont!', 20, canvas.height/2);
+    }
+  }
+
+  function drawImageFit(img, x, y){
+    if (!img || !img.complete) { ctx.fillStyle='rgba(255,255,255,.08)'; ctx.fillRect(x+2,y+2,TILE-4,TILE-4); return; }
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const s = Math.max(TILE/iw, TILE/ih); const dw = iw*s, dh = ih*s;
+    ctx.save(); ctx.beginPath(); ctx.rect(x+2,y+2,TILE-4,TILE-4); ctx.clip();
+    ctx.drawImage(img, x+(TILE-dw)/2, y+(TILE-dh)/2, dw, dh); ctx.restore();
+  }
+  function dot(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+
+  // --- Loop ---
+  function loop(t){
+    if (!running) return;
+    if (!last) last = t;
+    const dt = t - last; last = t;
+    acc += dt;
+    while (acc >= STEP_MS){ acc -= STEP_MS; step(); }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Initial draw so board shows even before Start
+  draw();
+  setStatus('Tap Start');
+})();
+</script>
+</body>
+</html>
